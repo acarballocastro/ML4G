@@ -52,9 +52,9 @@ dependencies:
   - xz=5.2.5
   - zeromq=4.3.4
   - zlib=1.2.11
-  - pyBigWig
   - pip:
     - numpy==1.22.3
     - pandas==1.4.1
     - pytz==2021.3
     - scipy==1.8.0
+    - pyBigWig
