@@ -3,7 +3,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - appnope=0.1.2
   - asttokens=2.0.5
   - backcall=0.2.0
   - backports=1.0
@@ -19,11 +18,10 @@ dependencies:
   - jedi=0.18.1
   - jupyter_client=7.1.2
   - jupyter_core=4.9.2
-  - libcxx=12.0.0
+  - libcurl
   - libffi=3.3
   - libsodium=1.0.18
   - matplotlib-inline=0.1.3
-  - ncurses=6.3
   - nest-asyncio=1.5.4
   - openssl=1.1.1l
   - parso=0.8.3
@@ -39,7 +37,6 @@ dependencies:
   - python-dateutil=2.8.2
   - python_abi=3.8
   - pyzmq=22.3.0
-  - readline=8.1.2
   - setuptools=58.0.4
   - six=1.16.0
   - sqlite=3.37.2
