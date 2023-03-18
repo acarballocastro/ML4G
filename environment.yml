@@ -74,4 +74,3 @@ dependencies:
   - xz=5.2.5=h516909a_1
   - zeromq=4.3.4=h9c3ff4c_1
   - zlib=1.2.11=h166bdaf_1014
-prefix: /home/pballesteros/miniconda3/envs/ML4G_Proj1
