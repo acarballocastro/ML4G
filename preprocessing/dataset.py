@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pandas as pd
 from utils import get_paths
+from tqdm import tqdm
 
 # CAGE Preprocessing. We will add the gene expression level to the CAGE data.
 
@@ -75,15 +76,39 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
 
     return histone_data
 
-def create_dataset():
+def create_dataset(path, window_size):
     """
 
     We will create the dataset for the training and the validation. We will obtain a feature matrix (histone data) for each gene.
     We will use a window of 40000 bp before and after the TSS. #TODO: Decide number of bins
     We will store the gene name, its histone matrix and its gex (for X3 we don't have gex)
 
+    :param path: Path of the directory where the data is located
+    :param window_size: Number of bases we will take to the left and right of the TSS
     :return:
     """
+    for f in os.listdir(path):
+        df = pd.read_table(path + f)
+        if df.shape == len(df.gene_name.unique()): #There are no duplicated genes
+            continue
+
+        cell_line = int(f.split('_')[0][-1])
+        dataset = {}
+        label ={}
+
+        for idx, row in tqdm(df.iterrows()):
+
+            start_pos = row.TSS_start - window_size
+            end_pos = row.TSS_end + window_size
+
+            histone_data = preprocess_histone_data(cell_line, row["chr"], start_pos , end_pos, 100)
+            dataset[row["gene_name"]] = histone_data
+
+            if cell_line != 3:
+                label[row["gene_name"]] = row["gex_transf"]
+
+
+
 
 if __name__ == '__main__':
     if not os.path.exists('../label_data'):
@@ -91,5 +116,6 @@ if __name__ == '__main__':
         preprocess_cage_data("../CAGE-train")
 
     #histone_data = preprocess_histone_data(1, "chr1", 1, 100,10)
+    create_dataset("../label_data/", 40000)
 
 
