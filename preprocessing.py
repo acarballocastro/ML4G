@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-# CAGE Preprocessing 
+# CAGE Preprocessing. We will add the gene expression level to the CAGE data.
 
 ## Read in data
 X1_train_info = pd.read_table("../CAGE-train/X1_train_info.tsv")
