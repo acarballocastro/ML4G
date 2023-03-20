@@ -97,7 +97,7 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K27ac','H3K27ac' ] #TODO: Add the rest of the histones and remove the duplicated one
+    histones = ['H3K27ac', ''] #TODO: Add the rest of the histones
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
@@ -133,7 +133,6 @@ def create_dataset(path: str, window_size: int, n_bins: int):
             continue
 
         dataset = {}
-        label ={}
         errors =0
         for idx, row in tqdm(df.iterrows(), total=df.shape[0]):
 
@@ -169,7 +168,7 @@ if __name__ == '__main__':
         # Prepare the data for testing
         prepare_test(path_data)
 
-    create_dataset("../label_data/", 20000, 100)
+    create_dataset(path_data, 20000, 100)
 
 
 
