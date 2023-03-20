@@ -2,20 +2,13 @@ import pyBigWig
 import numpy as np
 import os
 import pandas as pd
-from utils import get_paths
+from utils import get_paths, get_gene_unique_name, merge_datasets, save_to_pickle, load_pickle
 from tqdm import tqdm
+
 
 # CAGE Preprocessing. We will add the gene expression level to the CAGE data.
 
-def merge_datasets(df1, df2):
 
-    """
-    Merge two datasets using the gene name
-
-    """
-    df_merge = df1.set_index('gene_name').join(df2.set_index('gene_name'))
-
-    return df_merge
 
 def preprocess_cage_data(path):
 
@@ -47,7 +40,49 @@ def preprocess_cage_data(path):
         name["gex_transf"] = np.log2(name["gex"] + 1)
         name.to_csv( '../label_data/' + names[idx] + '.tsv', sep="\t")
 
-#TODO: We need to locate for each gene the position of each histone. We need to do a function for this
+    #Load the gex data for X3
+    X3_gex = pd.read_table(f'{path}/X3_test_info.tsv')
+    X3_gex.to_csv('../label_data/X3_test.tsv', sep="\t")
+
+
+def prepare_train_validation(path):
+
+    """
+    Prepare the training data. Gives new names to the genes in each cell line and merges the data from both cell lines
+
+    :param path: Path of the directory where the data is located
+
+    :return:
+    """
+    cell_lines = ['X1', 'X2']
+    file_type = ['train', 'val']
+    get_gene_unique_name(path, cell_lines, file_type)
+
+    files = ['train', 'val']
+
+    for f in files:
+        df1 = pd.read_table(path + '/X1_'+ f + '.tsv')
+        df2 = pd.read_table(path + '/X2_' + f + '.tsv')
+        X = pd.concat([df1, df2], ignore_index=True)
+        X.to_csv('../label_data/X_' + f + '.tsv', sep="\t", index=False)
+
+
+def prepare_test(path):
+
+    """
+    Prepare the test data. Gives new names to the genes in each cell line
+
+    :param path: Path of the directory where the data is located
+
+    :return:
+    """
+    cell_lines = ['X3']
+    file_type = ['test']
+
+    get_gene_unique_name(path, cell_lines, file_type)
+
+
+
 def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bins:int):
 
     """
@@ -62,13 +97,13 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K27ac','H3K27ac' ] #TODO: Add the rest of the histones
+    histones = ['H3K27ac','H3K27ac' ] #TODO: Add the rest of the histones and remove the duplicated one
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
 
-        path = f'../../histones/{histone}/X{cell_line}.bw' #TODO: custom this
-        bw = pyBigWig.open(path)#TODO:The chromosomes appear as chr1, chr2, etc. To access a range we need to use this: bw.stats("chr1",1,100, nBins=2)
+        path = f'../../histones/{histone}/X{cell_line}.bw' #TODO: custom this. Add the path where one has the histone data
+        bw = pyBigWig.open(path) #Note:The chromosomes appear as chr1, chr2, etc. To access a range we need to use this: bw.stats("chr1",1,100, nBins=2)
         hist_stats = bw.stats(chr, start, end, nBins=n_bins)
         histone_data = np.vstack([histone_data, hist_stats])
 
@@ -76,46 +111,66 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
 
     return histone_data
 
-def create_dataset(path, window_size):
+def create_dataset(path: str, window_size: int, n_bins: int):
     """
 
-    We will create the dataset for the training and the validation. We will obtain a feature matrix (histone data) for each gene.
-    We will use a window of 40000 bp before and after the TSS. #TODO: Decide number of bins
+    We will create the features dataset for the training, validation and testing.
+    We will obtain a feature matrix (histone data) for each gene.
+    We will use a window of 20000 bp before and after the TSS. #TODO: Decide number of bins
     We will store the gene name, its histone matrix and its gex (for X3 we don't have gex)
 
     :param path: Path of the directory where the data is located
     :param window_size: Number of bases we will take to the left and right of the TSS
-    :return:
+    :param n_bins: Number of bins we will use to divide the window
+
     """
-    for f in os.listdir(path):
+
+    files = ["X_train.tsv", "X_val.tsv", "X3_test.tsv"]
+
+    for f in files:
         df = pd.read_table(path + f)
         if df.shape == len(df.gene_name.unique()): #There are no duplicated genes
             continue
 
-        cell_line = int(f.split('_')[0][-1])
         dataset = {}
         label ={}
-
-        for idx, row in tqdm(df.iterrows()):
+        errors =0
+        for idx, row in tqdm(df.iterrows(), total=df.shape[0]):
 
             start_pos = row.TSS_start - window_size
             end_pos = row.TSS_end + window_size
+            cell_line = int(row.gene_name_unique.split('_')[1].split('X')[1])
 
-            histone_data = preprocess_histone_data(cell_line, row["chr"], start_pos , end_pos, 100)
-            dataset[row["gene_name"]] = histone_data
+            try:
+                histone_data = preprocess_histone_data(cell_line, row["chr"], start_pos, end_pos, n_bins)
+            except RuntimeError:
+                errors +=1
+                continue
 
             if cell_line != 3:
-                label[row["gene_name"]] = row["gex_transf"]
+                dataset[row["gene_name_unique"]] = [histone_data, row["gex_transf"]]
+            else:
+                dataset[row["gene_name_unique"]] = [histone_data]
 
-
+        save_to_pickle(path, f, dataset)
 
 
 if __name__ == '__main__':
-    if not os.path.exists('../label_data'):
-        os.makedirs('../label_data')
-        preprocess_cage_data("../CAGE-train")
 
-    #histone_data = preprocess_histone_data(1, "chr1", 1, 100,10)
-    create_dataset("../label_data/", 40000)
+    path_data= "../label_data"
+    path_expression = "../CAGE-train"
+    if not os.path.exists(path_data):
+        os.makedirs(path_data)
+        preprocess_cage_data(path_expression)
+
+        # Prepare the data for training and validation
+        prepare_train_validation(path_data)
+
+        # Prepare the data for testing
+        prepare_test(path_data)
+
+    create_dataset("../label_data/", 20000, 100)
+
+
 
 
