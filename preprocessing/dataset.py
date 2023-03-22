@@ -97,7 +97,7 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K27ac', ''] #TODO: Add the rest of the histones
+    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3'] #TODO: Add the rest of the histones
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
@@ -156,7 +156,7 @@ def create_dataset(path: str, window_size: int, n_bins: int):
 
 if __name__ == '__main__':
 
-    path_data= "../label_data"
+    path_data= "../label_data/"
     path_expression = "../CAGE-train"
     if not os.path.exists(path_data):
         os.makedirs(path_data)
