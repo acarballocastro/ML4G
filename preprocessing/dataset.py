@@ -111,7 +111,7 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
 
     return histone_data
 
-def create_dataset(path: str, window_size: int, n_bins: int):
+def create_dataset(path: str, window_size: int, bin_size: int):
     """
 
     We will create the features dataset for the training, validation and testing.
@@ -121,7 +121,7 @@ def create_dataset(path: str, window_size: int, n_bins: int):
 
     :param path: Path of the directory where the data is located
     :param window_size: Number of bases we will take to the left and right of the TSS
-    :param n_bins: Number of bins we will use to divide the window
+    :param bin_size: Length of each bin
 
     """
 
@@ -139,6 +139,8 @@ def create_dataset(path: str, window_size: int, n_bins: int):
             start_pos = row.TSS_start - window_size
             end_pos = row.TSS_end + window_size
             cell_line = int(row.gene_name_unique.split('_')[1].split('X')[1])
+
+            n_bins = round(int((end_pos - start_pos) / bin_size)) ## DONE: poner un número de bins variables. Lo que tengo que fijar es el número de elementos por bin: 2000 bp por bin
 
             try:
                 histone_data = preprocess_histone_data(cell_line, row["chr"], start_pos, end_pos, n_bins)
@@ -168,7 +170,8 @@ if __name__ == '__main__':
         # Prepare the data for testing
         prepare_test(path_data)
 
-    create_dataset(path_data, 20000, 100)
+    bin_size = 2000
+    create_dataset(path_data, 20000, bin_size)
 
 
 
