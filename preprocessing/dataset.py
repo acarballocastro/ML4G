@@ -170,7 +170,7 @@ if __name__ == '__main__':
         # Prepare the data for testing
         prepare_test(path_data)
 
-    bin_size = 250
+    bin_size = 20
     create_dataset(path_data, 20000, bin_size)
 
 
