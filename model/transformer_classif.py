@@ -24,16 +24,15 @@ from balanced_loss import Loss
 batch_size = 32
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
 def get_batch(source: Tuple, i: int) -> Tuple[Tensor, Tensor]:
     """
     Args:
-        source: Tuple[Tensor, Tensor], shape [full_seq_len, batch_size]
-        i: int
+        source: Tuple[Tensor, Tensor], shape [full_seq_len, embedding_size]. This is the whole dataset, with all the bins and the embedding size
+        i: int. Batch size
 
     Returns:
-        tuple (data, target), where data has shape [seq_len, batch_size] and
-        target has shape [seq_len * batch_size]
+        tuple (data, target), where data has shape [seq_len, embedding_size] and
+        target has shape [seq_len * embedding_size]
     """
     x, y = source
     seq_len = min(batch_size, len(x) - 1 - i)
@@ -74,7 +73,7 @@ def train_epoch(model: nn.Module, X, y, criterion, optimizer, scheduler, epoch) 
             start_time = time.time()
 
 
-def evaluate(model: nn.Module, eval_data: Tuple, criterion) -> (float, float, float, float):
+def evaluate(model: nn.Module, eval_data: Tuple, criterion) -> (float, float, float):
     X, y = eval_data
     model.eval()  # turn on evaluation mode
     total_loss = 0.
@@ -107,11 +106,12 @@ class TransformerRegressor:
         return 'TransformerRegressor'
 
     def __init__(self):
-        n_features = 5  #
-        emsize = 200  # embedding dimension. It must be divisible by nhead.
-        d_hid = 300  # dimension of the feedforward network model in nn.TransformerEncoder
-        nlayers = 2  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-        nhead = 4  # number of heads in nn.MultiheadAttention
+        #Here I have the parameters of the transformer model
+        n_features = 5  #Initial nº of histones
+        emsize = 100  # embedding dimension. It must be divisible by nhead.
+        d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
+        nlayers = 1  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+        nhead = 2  # number of heads in nn.MultiheadAttention
         dropout = 0.2  # dropout probability
         self.model = TransformerModel(n_features, emsize, nhead, d_hid, nlayers, dropout).to(device)
         self.x_val = None
@@ -150,7 +150,7 @@ class TransformerRegressor:
         mean_squared_error = nn.MSELoss()
 
         criterion = mean_squared_error
-        initial_lr = 1e-2  # learning rate
+        initial_lr = 1e-3  # learning rate
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=initial_lr)
         scheduler = self.get_polynomial_decay_schedule_with_warmup(optimizer, 128,
                                                                    128 * 300)  # torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
@@ -183,16 +183,17 @@ class TransformerRegressor:
         return self.model(X)
 
 
-class PositionalEncoding(nn.Module):
+class PositionalEncoding(nn.Module): #The positional encoder is using sine and cosine, which we saw in class that is not ideal for DNA
 
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 200):
+
+    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 200): #TODO: what is this 200?
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, 1, d_model)
-        pe[:, 0, 0::2] = torch.sin(position * div_term)
+        pe[:, 0, 0::2] = torch.sin(position * div_term) #TODO: change this
         pe[:, 0, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
@@ -216,9 +217,10 @@ class TransformerModel(nn.Module):
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.encoder = nn.Linear(dim_input, d_model)
         self.d_model = d_model
-        self.regressor = nn.Linear(d_model, 1)
-        self.relu = nn.ReLU()
+        self.regressor = nn.Linear(d_model, 1) #Fully connected layer that gives the output
+        self.relu = nn.ReLU() #Add a relu so that the output is always positive
         self.init_weights()
+
 
     def init_weights(self) -> None:
         initrange = 0.1
@@ -240,12 +242,16 @@ class TransformerModel(nn.Module):
         # replace nans with 0s
         src = src.nan_to_num()
         # not over the sequence itself. Shape: [batch_size, seq_len]
+
         src = src.permute(1, 0, 2) # [batch_size, seq_len, dim_input] -> [seq_len, batch_size, dim_input]
-        src = self.encoder(src) * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
+        src = self.encoder(src) * math.sqrt(self.d_model) #Normalization of the variance of the input
+        src = self.pos_encoder(src) #This is my embedding layer
+        #vocab_size, d_model = src.size()
+
         output = self.transformer_encoder(src, src_mask, src_key_padding_mask=src_key_padding_mask)
         output = self.regressor(output[0, :, :])  # take the CLS  and project it through regressor
         output = self.relu(output)
+
         return output
 
 
@@ -289,27 +295,8 @@ def main():
 
     x_data_test = torch.from_numpy(test_features_nparray.astype('float32'))
 
-    """
-    
-    #Create a nan tensor to add to x_data
 
-    nan_tensor= torch.full((x_data.size(dim=0), 1, x_data.size(dim=2)), np.nan)
-
-    #add extra column to x_data in dimension 1 with nans
-
-    #x_data = torch.cat((x_data, nan_tensor), dim=1)
-    #x_data = torch.cat((nan_tensor, x_data), dim=1)
-
-    # check that x_data has nans in first position of dimension 1 (last vector of every sequence)
-    assert torch.isnan(x_data[:, 0, :]).any()
-
-    # shift data to the right in dimension 1
-    #x_data = torch.roll(x_data, 1, 1)
-    x_data[:, 0, :] = -1000 * torch.ones(seq_length)  # set first vector of every sequence to -1000
-
-    """
-
-    # Alternative method: Create a -1000 tensor and append to the first column of x_data in the dimension 1
+    # Create a -1000 tensor and append to the first column of x_data in the dimension 1
     initial_tensor = torch.full((x_data_train.size(dim=0), 1, x_data_train.size(dim=2)), -1000)
     x_data_train = torch.cat((initial_tensor, x_data_train), dim=1)
 
