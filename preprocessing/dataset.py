@@ -8,8 +8,6 @@ from tqdm import tqdm
 
 # CAGE Preprocessing. We will add the gene expression level to the CAGE data.
 
-
-
 def preprocess_cage_data(path):
 
     """
@@ -82,7 +80,6 @@ def prepare_test(path):
     get_gene_unique_name(path, cell_lines, file_type)
 
 
-
 def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bins:int):
 
     """
@@ -97,19 +94,20 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3'] #TODO: Add the rest of the histones
+    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3', 'DNase'] #TODO: Add the rest of the histones
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
 
         path = f'../../histones/{histone}/X{cell_line}.bw' #TODO: custom this. Add the path where one has the histone data
-        bw = pyBigWig.open(path) #Note:The chromosomes appear as chr1, chr2, etc. To access a range we need to use this: bw.stats("chr1",1,100, nBins=2)
+        bw = pyBigWig.open(path) #Note: The chromosomes appear as chr1, chr2, etc. To access a range we need to use this: bw.stats("chr1",1,100, nBins=2)
         hist_stats = bw.stats(chr, start, end, nBins=n_bins)
         histone_data = np.vstack([histone_data, hist_stats])
 
     histone_data = histone_data.T
 
     return histone_data
+
 
 def create_dataset(path: str, window_size: int, bin_size: int):
     """
@@ -170,7 +168,7 @@ if __name__ == '__main__':
         # Prepare the data for testing
         prepare_test(path_data)
 
-    bin_size = 20
+    bin_size = 250
     create_dataset(path_data, 20000, bin_size)
 
 
