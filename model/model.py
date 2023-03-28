@@ -27,9 +27,12 @@ sweep_config = {
         'goal': 'maximize'   
     }, 
     'parameters': {
-        'dropout': {
-            'values': [0.1, 0.2, 0.3, 0.4, 0.5]
-        }
+        'dropout': {'max': 0.5, 'min': 0.1},
+        'em': {'max': 15, 'min': 10},
+        'nhead': {'max': 12, 'min': 3},
+        'd_hid': {'max': 300, 'min': 100},
+        'nlayers': {'max': 15, 'min': 5},
+        'initial_lr': {'max': 0.001, 'min': 0.00001},
     }
 }
 
@@ -123,16 +126,18 @@ class TransformerRegressor:
     def __str__(self):
         return 'TransformerRegressor'
 
-    def __init__(self, dropout):
+    def __init__(self, dropout, em, nhead, d_hid, nlayers, initial_lr):
 
         #Here I have the parameters of the transformer model
 
         n_features = 5  #Initial nº of histones
-        emsize = 104  # embedding dimension. It must be divisible by nhead.
-        nhead = 8  # number of heads in nn.MultiheadAttention
-        d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
-        nlayers = 10  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+        # em = 13
+        # nhead = 8  # number of heads in nn.MultiheadAttention
+        emsize = em*nhead  # embedding dimension. It must be divisible by nhead.   
+        # d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
+        # nlayers = 10  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
         # dropout = 0.2  # dropout probability
+        self.initial_lr = initial_lr
         self.model = TransformerModel(n_features, emsize, nhead, d_hid, nlayers, dropout).to(device)
         self.x_val = None
         self.y_val = None
@@ -170,7 +175,7 @@ class TransformerRegressor:
         mean_squared_error = nn.MSELoss()
 
         criterion = mean_squared_error
-        initial_lr = 1e-4  # learning rate #TODO: changed it to 1e-3 -> 1e-4
+        initial_lr = self.initial_lr # learning rate #TODO: changed it to 1e-3 -> 1e-4
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=initial_lr)
         #scheduler = self.get_polynomial_decay_schedule_with_warmup(optimizer, 128,128 * 300)  # torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
         best_model = None
@@ -310,6 +315,11 @@ def main():
     # hyperparameter tuning
     run = wandb.init()
     dropout = wandb.config.dropout
+    em = wandb.config.em
+    nhead = wandb.config.nhead
+    d_hid = wandb.config.d_hid
+    nlayers = wandb.config.nlayers
+    initial_lr = wandb.config.initial_lr
 
     # random shuffle train
     random.shuffle(train)
@@ -366,7 +376,7 @@ def main():
     # load pytorch model from file 'model.pt'
 
     # create model
-    model = TransformerRegressor(dropout)
+    model = TransformerRegressor(dropout, em, nhead, d_hid, nlayers, initial_lr)
     # if file exists load
     #if os.path.isfile('model_transformer.pt'):
     #   model.model.load_state_dict(torch.load('model_transformer.pt'))
@@ -375,8 +385,8 @@ def main():
     # fit model
     model.fit(x_data_train, y_data_train)
     # detach from gpu and save model
-    model.model.cpu()
-    torch.save(model.model.state_dict(), 'model_100epochs_n20.pt')
+    # model.model.cpu()
+    # torch.save(model.model.state_dict(), 'model_100epochs_n20.pt')
 
 """
 def test_saved_model():
