@@ -15,6 +15,25 @@ from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 from sklearn import metrics
 
+import wandb
+wandb.login(key = "9812a4543b7c0b8c7b08006c2b8d536a504a3d8b")
+
+# Hyperparameter tuning
+
+sweep_config = {
+    'method': 'bayes',
+    'metric': {
+        'name': 'spearman',
+        'goal': 'maximize'   
+    }, 
+    'parameters': {
+        'dropout': {
+            'values': [0.1, 0.2, 0.3, 0.4, 0.5]
+        }
+    }
+}
+
+sweep_id = wandb.sweep(sweep_config, project="ML4GProj1")
 
 # pip install numpy pandas requests tqdm torch sklearn
 
@@ -104,7 +123,8 @@ class TransformerRegressor:
     def __str__(self):
         return 'TransformerRegressor'
 
-    def __init__(self):
+    def __init__(self, dropout):
+
         #Here I have the parameters of the transformer model
 
         n_features = 5  #Initial nº of histones
@@ -112,7 +132,7 @@ class TransformerRegressor:
         nhead = 8  # number of heads in nn.MultiheadAttention
         d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
         nlayers = 10  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-        dropout = 0.2  # dropout probability
+        # dropout = 0.2  # dropout probability
         self.model = TransformerModel(n_features, emsize, nhead, d_hid, nlayers, dropout).to(device)
         self.x_val = None
         self.y_val = None
@@ -146,7 +166,7 @@ class TransformerRegressor:
     def fit(self, X, y):
         best_mse = float('inf')
         epochs = 100
-
+        
         mean_squared_error = nn.MSELoss()
 
         criterion = mean_squared_error
@@ -172,6 +192,14 @@ class TransformerRegressor:
                 if mse < best_mse:
                     best_mse = mse
                     best_model = copy.deepcopy(self.model)
+
+                # Hyperparameter tuning
+                wandb.log({
+                    'epoch': epoch,
+                    'val_loss': val_loss,
+                    'mse': mse,
+                    'spearman': spearman
+                })
 
                 #scheduler.step()
         except KeyboardInterrupt:
@@ -217,7 +245,7 @@ class TransformerModel(nn.Module):
         self.embeddings =nn.Linear(2*d_model, d_model)
 
         self.pos_encoder = PositionalEncoding(d_model, dropout) #This is with sine cosine so not ideal. Check relative encoding
-        self.mask_encoder = CentralMaskPositionalEncoder(d_model, dropout)
+        #self.mask_encoder = CentralMaskPositionalEncoder(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=False)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
@@ -273,13 +301,15 @@ def main():
     torch.manual_seed(42)
 
     # load data
-
     X_train = pickle.load(open("../data/X_train.pickle", "rb"))
     X_val = pickle.load(open("../data/X_val.pickle", "rb"))
 
     train = list(X_train.items())
     validation = list(X_val.items())
-    
+
+    # hyperparameter tuning
+    run = wandb.init()
+    dropout = wandb.config.dropout
 
     # random shuffle train
     random.shuffle(train)
@@ -336,7 +366,7 @@ def main():
     # load pytorch model from file 'model.pt'
 
     # create model
-    model = TransformerRegressor()
+    model = TransformerRegressor(dropout)
     # if file exists load
     #if os.path.isfile('model_transformer.pt'):
     #   model.model.load_state_dict(torch.load('model_transformer.pt'))
@@ -429,6 +459,8 @@ def test_val():
 
 
 if __name__ == '__main__':
-    main()
+
+    wandb.agent(sweep_id, function=main, count=5)
+    #main()
     #test_saved_model()
     #test_val()
