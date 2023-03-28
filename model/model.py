@@ -460,7 +460,7 @@ def test_val():
 
 if __name__ == '__main__':
 
-    wandb.agent(sweep_id, function=main, count=5)
+    wandb.agent(sweep_id, function=main, count=200)
     #main()
     #test_saved_model()
     #test_val()
