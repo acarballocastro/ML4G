@@ -23,8 +23,8 @@ wandb.login(key = "9812a4543b7c0b8c7b08006c2b8d536a504a3d8b")
 sweep_config = {
     'method': 'bayes',
     'metric': {
-        'name': 'spearman',
-        'goal': 'maximize'   
+        'name': 'best_mse',
+        'goal': 'minimize'   
     }, 
     'parameters': {
         'dropout': {'max': 0.5, 'min': 0.1},
@@ -170,6 +170,7 @@ class TransformerRegressor:
 
     def fit(self, X, y):
         best_mse = float('inf')
+        best_spearman = float('-inf')
         epochs = 100
         
         mean_squared_error = nn.MSELoss()
@@ -196,6 +197,7 @@ class TransformerRegressor:
 
                 if mse < best_mse:
                     best_mse = mse
+                    best_spearman = spearman
                     best_model = copy.deepcopy(self.model)
 
                 # Hyperparameter tuning
@@ -203,7 +205,9 @@ class TransformerRegressor:
                     'epoch': epoch,
                     'val_loss': val_loss,
                     'mse': mse,
-                    'spearman': spearman
+                    'spearman': spearman,
+                    'best_mse': best_mse,
+                    'best_spearman': best_spearman
                 })
 
                 #scheduler.step()
