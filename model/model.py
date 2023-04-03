@@ -15,28 +15,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 from sklearn import metrics
 
-import wandb
-wandb.login(key = "9812a4543b7c0b8c7b08006c2b8d536a504a3d8b")
-
-# Hyperparameter tuning
-
-sweep_config = {
-    'method': 'bayes',
-    'metric': {
-        'name': 'best_mse',
-        'goal': 'minimize'   
-    }, 
-    'parameters': {
-        'dropout': {'max': 0.5, 'min': 0.1},
-        'em': {'max': 15, 'min': 10},
-        'nhead': {'max': 12, 'min': 3},
-        'd_hid': {'max': 300, 'min': 100},
-        'nlayers': {'max': 15, 'min': 5},
-        'initial_lr': {'max': 0.001, 'min': 0.00001},
-    }
-}
-
-sweep_id = wandb.sweep(sweep_config, project="ML4GProj1")
 
 # pip install numpy pandas requests tqdm torch sklearn
 
@@ -82,7 +60,7 @@ def train_epoch(model: nn.Module, X, y, criterion, optimizer, epoch) -> None:
         total_loss += loss.item()
         if batch % log_interval == 0 and batch > 0:
             #lr = scheduler.get_last_lr()[0]
-            lr= 1e-4
+            lr= 0.000411
             ms_per_batch = (time.time() - start_time) * 1000 / log_interval
             cur_loss = total_loss / log_interval
             ppl = math.exp(cur_loss)
@@ -115,7 +93,7 @@ def evaluate(model: nn.Module, eval_data: Tuple, criterion):
     mse = metrics.mean_squared_error(tgts, preds)
 
     #spearman correlation between targets and predictions
-
+    print(preds)
     spearman = stats.spearmanr(tgts, preds)[0]
 
     return total_loss / (len(eval_data) - 1), mse, spearman
@@ -126,18 +104,16 @@ class TransformerRegressor:
     def __str__(self):
         return 'TransformerRegressor'
 
-    def __init__(self, dropout, em, nhead, d_hid, nlayers, initial_lr):
+    def __init__(self):
 
         #Here I have the parameters of the transformer model
 
         n_features = 5  #Initial nº of histones
-        # em = 13
-        # nhead = 8  # number of heads in nn.MultiheadAttention
-        emsize = em*nhead  # embedding dimension. It must be divisible by nhead.   
-        # d_hid = 200  # dimension of the feedforward network model in nn.TransformerEncoder
-        # nlayers = 10  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-        # dropout = 0.2  # dropout probability
-        self.initial_lr = initial_lr
+        emsize = 30  # embedding dimension. It must be divisible by nhead.
+        nhead = 3  # number of heads in nn.MultiheadAttention
+        d_hid = 166  # dimension of the feedforward network model in nn.TransformerEncoder
+        nlayers = 10  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+        dropout = 0.1525  # dropout probability
         self.model = TransformerModel(n_features, emsize, nhead, d_hid, nlayers, dropout).to(device)
         self.x_val = None
         self.y_val = None
@@ -170,13 +146,12 @@ class TransformerRegressor:
 
     def fit(self, X, y):
         best_mse = float('inf')
-        best_spearman = float('-inf')
         epochs = 100
-        
+
         mean_squared_error = nn.MSELoss()
 
         criterion = mean_squared_error
-        initial_lr = self.initial_lr # learning rate #TODO: changed it to 1e-3 -> 1e-4
+        initial_lr = 1e-4  # learning rate #TODO: changed it to 1e-3 -> 1e-4
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=initial_lr)
         #scheduler = self.get_polynomial_decay_schedule_with_warmup(optimizer, 128,128 * 300)  # torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
         best_model = None
@@ -197,18 +172,7 @@ class TransformerRegressor:
 
                 if mse < best_mse:
                     best_mse = mse
-                    best_spearman = spearman
                     best_model = copy.deepcopy(self.model)
-
-                # Hyperparameter tuning
-                wandb.log({
-                    'epoch': epoch,
-                    'val_loss': val_loss,
-                    'mse': mse,
-                    'spearman': spearman,
-                    'best_mse': best_mse,
-                    'best_spearman': best_spearman
-                })
 
                 #scheduler.step()
         except KeyboardInterrupt:
@@ -241,6 +205,7 @@ class PositionalEncoding(nn.Module): #The positional encoder is using sine and c
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
 
+
 class TransformerModel(nn.Module):
 
     def __init__(self, dim_input: int, d_model: int, nhead: int, d_hid: int,
@@ -254,7 +219,6 @@ class TransformerModel(nn.Module):
         self.embeddings =nn.Linear(2*d_model, d_model)
 
         self.pos_encoder = PositionalEncoding(d_model, dropout) #This is with sine cosine so not ideal. Check relative encoding
-        #self.mask_encoder = CentralMaskPositionalEncoder(d_model, dropout)
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=False)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
@@ -294,7 +258,6 @@ class TransformerModel(nn.Module):
         src = self.relu2(src)
         src = self.embeddings(src) 
         src = self.pos_encoder(src)
-        #src = self.mask_encoder(src)
         output = self.transformer_encoder(src, src_mask, src_key_padding_mask=src_key_padding_mask)
         output = self.regressor(output[0, :, :])  # take the CLS  and project it through regressor
         output = self.relu(output)
@@ -310,20 +273,13 @@ def main():
     torch.manual_seed(42)
 
     # load data
+
     X_train = pickle.load(open("../data/X_train.pickle", "rb"))
     X_val = pickle.load(open("../data/X_val.pickle", "rb"))
 
     train = list(X_train.items())
     validation = list(X_val.items())
-
-    # hyperparameter tuning
-    run = wandb.init()
-    dropout = wandb.config.dropout
-    em = wandb.config.em
-    nhead = wandb.config.nhead
-    d_hid = wandb.config.d_hid
-    nlayers = wandb.config.nlayers
-    initial_lr = wandb.config.initial_lr
+    
 
     # random shuffle train
     random.shuffle(train)
@@ -332,36 +288,19 @@ def main():
     train_names = [x[0] for x in train]
     train_features = [x[1][0] for x in train]
     train_labels = [x[1][1] for x in train]
+    train_features_nparray = np.stack([i for i in train_features], axis=0)
 
-    #Pad the sequences to the same length. The input has different shapes 
-    max_length = max([len(i) for i in train_features])
-    padded_arrays_train = []
-    for arr in train_features:
-        pad_len = max_length - arr.shape[0]
-        padded_arr = np.pad(arr, ((0, pad_len), (0, 0)), 'constant', constant_values=np.nan)
-        padded_arrays_train.append(padded_arr)
-
-    np_arrays_train = np.stack([i for i in padded_arrays_train], axis=0)
-
-     # to torch tensor
-    x_data_train = torch.from_numpy(np_arrays_train.astype('float32'))
+    # to torch tensor
+    x_data_train = torch.from_numpy(train_features_nparray.astype('float32'))
     y_data_train = torch.from_numpy(np.array(train_labels).astype('float32'))
 
     # Prepare validation tensor
     val_names = [x[0] for x in validation]
     val_features = [x[1][0] for x in validation]
     val_labels = [x[1][1] for x in validation]
-    
-    max_length = max([len(i) for i in val_features])
-    padded_arrays_val = []
-    for arr in val_features:
-        pad_len = max_length - arr.shape[0]
-        padded_arr = np.pad(arr, ((0, pad_len), (0, 0)), 'constant', constant_values=np.nan)
-        padded_arrays_val.append(padded_arr)
+    val_features_nparray = np.stack([i for i in val_features], axis=0)
 
-    np_arrays_val = np.stack([i for i in padded_arrays_val], axis=0)
-
-    x_data_val = torch.from_numpy(np_arrays_val.astype('float32'))  # batch x seq_len x dim
+    x_data_val = torch.from_numpy(val_features_nparray.astype('float32'))  # batch x seq_len x dim
     y_data_val = torch.from_numpy(np.array(val_labels).astype('float32'))
 
 
@@ -380,7 +319,7 @@ def main():
     # load pytorch model from file 'model.pt'
 
     # create model
-    model = TransformerRegressor(dropout, em, nhead, d_hid, nlayers, initial_lr)
+    model = TransformerRegressor()
     # if file exists load
     #if os.path.isfile('model_transformer.pt'):
     #   model.model.load_state_dict(torch.load('model_transformer.pt'))
@@ -389,13 +328,10 @@ def main():
     # fit model
     model.fit(x_data_train, y_data_train)
     # detach from gpu and save model
-    # model.model.cpu()
-    # torch.save(model.model.state_dict(), 'model_100epochs_n20.pt')
+    model.model.cpu()
+    torch.save(model.model.state_dict(), 'model_improved_100epochs_seed.pt')
 
-"""
 def test_saved_model():
-#TODO: padding for test data
-
     global device
     device = 'cpu'
     X_test = pickle.load(open("../data/X3_test.pickle", "rb"))
@@ -419,7 +355,7 @@ def test_saved_model():
 
     # load pytorch model from file 'model_improved_300epochs.pt'
     model = TransformerRegressor()
-    model.model.load_state_dict(torch.load('model_100epochs_n20.pt'))
+    model.model.load_state_dict(torch.load('model_improved_100epochs_seed.pt'))
     model.model.eval()
 
     # predict
@@ -457,7 +393,7 @@ def test_val():
 
     # load pytorch model from file 'model_improved_300epochs.pt'
     model = TransformerRegressor()
-    model.model.load_state_dict(torch.load('model_100epochs_n20.pt'))
+    model.model.load_state_dict(torch.load('model_improved_100epochs_seed.pt'))
     model.model.to(device)
     model.model.eval()
 
@@ -469,12 +405,10 @@ def test_val():
     # calculate spearman correlation
     spearman = stats.spearmanr(val_labels_original, y_predict_numpy_original)[0]
     print(spearman)
-"""
+
 
 
 if __name__ == '__main__':
-
-    wandb.agent(sweep_id, function=main, count=200)
     #main()
-    #test_saved_model()
+    test_saved_model()
     #test_val()
