@@ -94,12 +94,12 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3', 'DNase'] #TODO: Add the rest of the histones
+    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3'] #TODO: Add the rest of the histones
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
 
-        path = f'../../histones/{histone}/X{cell_line}.bw' #TODO: custom this. Add the path where one has the histone data
+        path = f'../histones/{histone}/X{cell_line}.bw' #TODO: custom this. Add the path where one has the histone data
         bw = pyBigWig.open(path) #Note: The chromosomes appear as chr1, chr2, etc. To access a range we need to use this: bw.stats("chr1",1,100, nBins=2)
         hist_stats = bw.stats(chr, start, end, nBins=n_bins)
         histone_data = np.vstack([histone_data, hist_stats])
