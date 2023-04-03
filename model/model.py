@@ -5,6 +5,8 @@ import pickle
 import random
 import time
 from typing import Tuple
+import pandas as pd
+import sys
 
 import numpy as np
 import torch
@@ -55,11 +57,9 @@ def train_epoch(model: nn.Module, X, y, criterion, optimizer, epoch) -> None:
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
         optimizer.step()
-        #scheduler.step()
 
         total_loss += loss.item()
         if batch % log_interval == 0 and batch > 0:
-            #lr = scheduler.get_last_lr()[0]
             lr= 0.000411
             ms_per_batch = (time.time() - start_time) * 1000 / log_interval
             cur_loss = total_loss / log_interval
@@ -80,8 +80,6 @@ def evaluate(model: nn.Module, eval_data: Tuple, criterion):
         for i in range(0, X.size(0) - 1, batch_size):
             data, targets = get_batch((X, y), i)
             seq_len = data.size(0)
-            # if seq_len != bptt:
-            #     src_mask = src_mask[:seq_len, :seq_len]
             output = model(data)
             output = output.view(-1)
             preds.extend(output.tolist())
@@ -93,7 +91,6 @@ def evaluate(model: nn.Module, eval_data: Tuple, criterion):
     mse = metrics.mean_squared_error(tgts, preds)
 
     #spearman correlation between targets and predictions
-    print(preds)
     spearman = stats.spearmanr(tgts, preds)[0]
 
     return total_loss / (len(eval_data) - 1), mse, spearman
@@ -122,38 +119,16 @@ class TransformerRegressor:
         self.x_val = x_test
         self.y_val = y_test
 
-    def get_polynomial_decay_schedule_with_warmup(
-            self, optimizer, num_warmup_steps, num_training_steps, lr_end=1e-6, power=1.0, last_epoch=-1
-    ):
-
-        lr_init = optimizer.defaults["lr"]
-        if not (lr_init > lr_end):
-            raise ValueError(f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})")
-
-        def lr_lambda(current_step: int):
-            if current_step < num_warmup_steps:
-                return float(current_step) / float(max(1, num_warmup_steps))
-            elif current_step > num_training_steps:
-                return lr_end / lr_init  # as LambdaLR multiplies by lr_init
-            else:
-                lr_range = lr_init - lr_end
-                decay_steps = num_training_steps - num_warmup_steps
-                pct_remaining = 1 - (current_step - num_warmup_steps) / decay_steps
-                decay = lr_range * pct_remaining ** power + lr_end
-                return decay / lr_init  # as LambdaLR multiplies by lr_init
-
-        return LambdaLR(optimizer, lr_lambda, last_epoch)
 
     def fit(self, X, y):
         best_mse = float('inf')
-        epochs = 100
+        epochs = 10
 
         mean_squared_error = nn.MSELoss()
 
         criterion = mean_squared_error
-        initial_lr = 1e-4  # learning rate #TODO: changed it to 1e-3 -> 1e-4
+        initial_lr = 0.000411
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=initial_lr)
-        #scheduler = self.get_polynomial_decay_schedule_with_warmup(optimizer, 128,128 * 300)  # torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.95)
         best_model = None
 
         try:
@@ -166,15 +141,13 @@ class TransformerRegressor:
                 elapsed = time.time() - epoch_start_time
                 print('-' * 89)
                 print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
-                      f'valid loss {val_loss:5.2f}  | mse {mse:5.2f} |'# lr {scheduler.get_last_lr()[0]:02.6f} | '
+                      f'valid loss {val_loss:5.2f}  | mse {mse:5.2f} |'
                       f'spearman {spearman:5.2f}')
                 print('-' * 89)
 
                 if mse < best_mse:
-                    best_mse = mse
                     best_model = copy.deepcopy(self.model)
 
-                #scheduler.step()
         except KeyboardInterrupt:
             print("Finishing training...")
         self.model = best_model
@@ -209,20 +182,21 @@ class PositionalEncoding(nn.Module): #The positional encoder is using sine and c
 class TransformerModel(nn.Module):
 
     def __init__(self, dim_input: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dropout: float = 0.1): #TODO: I am changing dropout 0.5 -> 0.1
+                 nlayers: int, dropout: float): 
         super().__init__()
+
         self.model_type = 'Transformer'
-        self.encoder1 = nn.Linear(dim_input, 2*d_model) #This is the embedding layer
+        self.encoder1 = nn.Linear(dim_input, 2*d_model) 
         self.relu1 = nn.ReLU()
         self.encoder2 = nn.Linear(2*d_model, 2*d_model)
         self.relu2 = nn.ReLU()
         self.embeddings =nn.Linear(2*d_model, d_model)
 
-        self.pos_encoder = PositionalEncoding(d_model, dropout) #This is with sine cosine so not ideal. Check relative encoding
+        self.pos_encoder = PositionalEncoding(d_model, dropout) 
         encoder_layers = TransformerEncoderLayer(d_model, nhead, d_hid, dropout, batch_first=False)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.d_model = d_model
-        self.regressor = nn.Linear(d_model, 1) #Fully connected layer that gives the output
+        self.regressor = nn.Linear(d_model, 1) 
         self.relu = nn.ReLU() #Add a relu so that the output is always positive
 
         self.init_weights()
@@ -247,12 +221,12 @@ class TransformerModel(nn.Module):
             output Tensor of shape [seq_len, batch_size, ntoken]
         """
         # exchange batch and seq dim
-        src_key_padding_mask = src[:, :, 0].isnan()  # this mask is over elements of the sequence,
-        # replace nans with 0s
+        src_key_padding_mask = src[:, :, 0].isnan() 
+
         src = src.nan_to_num()
-        # not over the sequence itself. Shape: [batch_size, seq_len]
+
         src = src.permute(1, 0, 2) # [batch_size, seq_len, dim_input] -> [seq_len, batch_size, dim_input]
-        src = self.encoder1(src) * math.sqrt(2*self.d_model) #Normalization of the variance of the input. Encoding layer
+        src = self.encoder1(src) * math.sqrt(2*self.d_model) 
         src = self.relu1(src)
         src = self.encoder2(src)
         src = self.relu2(src)
@@ -279,13 +253,12 @@ def main():
 
     train = list(X_train.items())
     validation = list(X_val.items())
-    
 
     # random shuffle train
     random.shuffle(train)
 
     # Prepare train tensor
-    train_names = [x[0] for x in train]
+
     train_features = [x[1][0] for x in train]
     train_labels = [x[1][1] for x in train]
     train_features_nparray = np.stack([i for i in train_features], axis=0)
@@ -294,8 +267,8 @@ def main():
     x_data_train = torch.from_numpy(train_features_nparray.astype('float32'))
     y_data_train = torch.from_numpy(np.array(train_labels).astype('float32'))
 
+
     # Prepare validation tensor
-    val_names = [x[0] for x in validation]
     val_features = [x[1][0] for x in validation]
     val_labels = [x[1][1] for x in validation]
     val_features_nparray = np.stack([i for i in val_features], axis=0)
@@ -314,22 +287,20 @@ def main():
     x_data_train.to(device)
     y_data_train.to(device)
 
-    # split data
-    # x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.1, random_state=42)
-    # load pytorch model from file 'model.pt'
-
     # create model
     model = TransformerRegressor()
-    # if file exists load
-    #if os.path.isfile('model_transformer.pt'):
-    #   model.model.load_state_dict(torch.load('model_transformer.pt'))
+    #if file exists load
+    if os.path.isfile('model_final.pt'):
+      model.model.load_state_dict(torch.load('model_final.pt'))
 
+    
     model.set_validation_data(x_data_val, y_data_val)
+    
     # fit model
     model.fit(x_data_train, y_data_train)
     # detach from gpu and save model
     model.model.cpu()
-    torch.save(model.model.state_dict(), 'model_improved_100epochs_seed.pt')
+    torch.save(model.model.state_dict(), 'model_final.pt')
 
 def test_saved_model():
     global device
@@ -355,7 +326,7 @@ def test_saved_model():
 
     # load pytorch model from file 'model_improved_300epochs.pt'
     model = TransformerRegressor()
-    model.model.load_state_dict(torch.load('model_improved_100epochs_seed.pt'))
+    model.model.load_state_dict(torch.load('model_final.pt'))
     model.model.eval()
 
     # predict
@@ -369,46 +340,11 @@ def test_saved_model():
         f.write(',gene_name,gex_predicted' + '\n')
         for i in range(len(y_predict_numpy_original)):
             f.write(str(i) + ',' + str(test_names[i]).split('_')[0] + ',' + str(y_predict_numpy_original[i][0]) + '\n')
-
-
-def test_val():
-    global device
-    device = 'cpu'
-    X_val = pickle.load(open("../data/X_val.pickle", "rb"))
-    validation = list(X_val.items())
-    val_features = [x[1][0] for x in validation]
-    val_features_nparray = np.stack([i for i in val_features], axis=0)
-    val_labels = [x[1][1] for x in validation]
-    val_labels_nparray = np.array(val_labels).astype('float32')
-    val_labels_original = np.power(2, val_labels_nparray) - 1
-    x_data_val = torch.from_numpy(val_features_nparray.astype('float32'))  # batch x seq_len x dim
-    y_data_val = torch.from_numpy(val_labels_original)
-
-    # Create a -1000 tensor and append to the first column of x_data in the dimension 1
-    initial_tensor = torch.full((x_data_val.size(dim=0), 1, x_data_val.size(dim=2)), -1000)
-    x_data_val = torch.cat((initial_tensor, x_data_val), dim=1).to(device)
-
-    # check that x_data has -1000 in first position of dimension 1
-    assert torch.all(x_data_val[:, 0, :] == -1000)
-
-    # load pytorch model from file 'model_improved_300epochs.pt'
-    model = TransformerRegressor()
-    model.model.load_state_dict(torch.load('model_improved_100epochs_seed.pt'))
-    model.model.to(device)
-    model.model.eval()
-
-    # predict
-    y_pred = model.predict(x_data_val)
-    y_numpy = y_pred.detach().numpy()
-    y_predict_numpy_original = np.power(2, y_numpy) - 1
-
-    # calculate spearman correlation
-    spearman = stats.spearmanr(val_labels_original, y_predict_numpy_original)[0]
-    print(spearman)
-
-
+    
 
 if __name__ == '__main__':
-    #main()
-    test_saved_model()
-    #test_val()
+    if sys.argv[1] == 'train':
+        main()
+    elif sys.argv[1] == 'test':
+        test_saved_model()
+

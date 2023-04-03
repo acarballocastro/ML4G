@@ -94,7 +94,7 @@ def preprocess_histone_data(cell_line: int, chr: str, start: int, end:int, n_bin
     :return: Histone data matrix (n_bins x n_histones). Each entry is the average value of the bigWig measurement in the bin.
     """
 
-    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3'] #TODO: Add the rest of the histones
+    histones = ['H3K4me1', 'H3K4me3', 'H3K9me3', 'H3K27ac', 'H3K27me3']
 
     histone_data = np.zeros((0, n_bins))
     for histone in histones:
@@ -114,7 +114,7 @@ def create_dataset(path: str, window_size: int, bin_size: int):
 
     We will create the features dataset for the training, validation and testing.
     We will obtain a feature matrix (histone data) for each gene.
-    We will use a window of 20000 bp before and after the TSS. #TODO: Decide number of bins
+    We will use a window of 20000 bp before and after the TSS.
     We will store the gene name, its histone matrix and its gex (for X3 we don't have gex)
 
     :param path: Path of the directory where the data is located
@@ -138,7 +138,7 @@ def create_dataset(path: str, window_size: int, bin_size: int):
             end_pos = row.TSS_end + window_size
             cell_line = int(row.gene_name_unique.split('_')[1].split('X')[1])
 
-            n_bins = round(int((end_pos - start_pos) / bin_size)) ## DONE: poner un número de bins variables. Lo que tengo que fijar es el número de elementos por bin: 2000 bp por bin
+            n_bins = round(int((end_pos - start_pos) / bin_size))
 
             try:
                 histone_data = preprocess_histone_data(cell_line, row["chr"], start_pos, end_pos, n_bins)
